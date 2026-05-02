@@ -1,25 +1,66 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../constants/api';
+
+type Mode = 'login' | 'register';
 
 export default function LoginScreen() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [mode, setMode] = useState<Mode>('login');
+  const [nombre, setNombre] = useState('');
+  const [correo, setCorreo] = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ nombre?: string; correo?: string; password?: string }>({});
+  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const validate = () => {
-    const newErrors: { email?: string; password?: string } = {};
-    if (!email) newErrors.email = 'El correo es requerido';
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = 'Correo inválido';
-    if (!password) newErrors.password = 'La contraseña es requerida';
-    else if (password.length < 6) newErrors.password = 'Mínimo 6 caracteres';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    const e: typeof errors = {};
+    if (mode === 'register' && !nombre.trim()) e.nombre = 'El nombre es requerido';
+    if (!correo.trim()) e.correo = 'El correo es requerido';
+    else if (!/\S+@\S+\.\S+/.test(correo)) e.correo = 'Correo inválido';
+    if (!password) e.password = 'La contraseña es requerida';
+    else if (password.length < 6) e.password = 'Mínimo 6 caracteres';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
-  const handleLogin = () => {
-    if (validate()) login(email);
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setLoading(true);
+    setServerError(null);
+    try {
+      const endpoint = mode === 'login' ? '/login' : '/register';
+      const body = mode === 'login'
+        ? { correo, password }
+        : { nombre, correo, password };
+
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setServerError(data.detail || 'Error del servidor');
+        return;
+      }
+
+      login(data.correo, data.nombre);
+    } catch {
+      setServerError('No se pudo conectar al servidor');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchMode = () => {
+    setMode(m => m === 'login' ? 'register' : 'login');
+    setErrors({});
+    setServerError(null);
   };
 
   return (
@@ -28,21 +69,37 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Bienvenido</Text>
-        <Text style={styles.subtitle}>Inicia sesión para continuar</Text>
+        <Text style={styles.title}>{mode === 'login' ? 'Bienvenido' : 'Crear cuenta'}</Text>
+        <Text style={styles.subtitle}>
+          {mode === 'login' ? 'Inicia sesión para continuar' : 'Regístrate para empezar'}
+        </Text>
+
+        {mode === 'register' && (
+          <View style={styles.field}>
+            <Text style={styles.label}>Nombre</Text>
+            <TextInput
+              style={[styles.input, errors.nombre && styles.inputError]}
+              placeholder="Tu nombre"
+              placeholderTextColor="#9CA3AF"
+              value={nombre}
+              onChangeText={setNombre}
+            />
+            {errors.nombre && <Text style={styles.errorText}>{errors.nombre}</Text>}
+          </View>
+        )}
 
         <View style={styles.field}>
           <Text style={styles.label}>Correo electrónico</Text>
           <TextInput
-            style={[styles.input, errors.email && styles.inputError]}
+            style={[styles.input, errors.correo && styles.inputError]}
             placeholder="correo@ejemplo.com"
             placeholderTextColor="#9CA3AF"
             keyboardType="email-address"
             autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
+            value={correo}
+            onChangeText={setCorreo}
           />
-          {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
+          {errors.correo && <Text style={styles.errorText}>{errors.correo}</Text>}
         </View>
 
         <View style={styles.field}>
@@ -58,8 +115,23 @@ export default function LoginScreen() {
           {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleLogin}>
-          <Text style={styles.buttonText}>Iniciar sesión</Text>
+        {serverError && (
+          <View style={styles.serverError}>
+            <Text style={styles.serverErrorText}>{serverError}</Text>
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.button} onPress={handleSubmit} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="white" />
+            : <Text style={styles.buttonText}>{mode === 'login' ? 'Iniciar sesión' : 'Registrarse'}</Text>
+          }
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.switchBtn} onPress={switchMode}>
+          <Text style={styles.switchText}>
+            {mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}
+          </Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -85,6 +157,13 @@ const styles = StyleSheet.create({
   },
   inputError: { borderColor: '#EF4444' },
   errorText: { fontSize: 12, color: '#EF4444', marginTop: 4 },
+  serverError: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  serverErrorText: { color: '#EF4444', fontSize: 14 },
   button: {
     backgroundColor: '#3B82F6',
     paddingVertical: 14,
@@ -93,4 +172,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   buttonText: { color: 'white', fontSize: 16, fontWeight: '700' },
+  switchBtn: { alignItems: 'center', marginTop: 20 },
+  switchText: { color: '#3B82F6', fontSize: 14 },
 });

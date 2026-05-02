@@ -60,6 +60,16 @@ def get_ubicacion(correo: str):
         raise HTTPException(status_code=404, detail="Sin ubicación disponible")
     return coordenadas[correo]
 
+
+@app.get("/usuario/{correo}")
+def get_usuario(correo: str):
+    user = get_user(correo)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return { "id": user["id"], "nombre": user["nombre"], "correo": user["correo"] }
+
+
+
 # --- WebSocket ---
 
 @app.websocket("/ws/{correo}")

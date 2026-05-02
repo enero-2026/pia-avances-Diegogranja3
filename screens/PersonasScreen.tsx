@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import { API_URL } from '../constants/api';
 
 type Persona = {
   id: string;
@@ -9,26 +10,28 @@ type Persona = {
 
 export default function PersonasScreen() {
   const [personas, setPersonas] = useState<Persona[]>([]);
-  const [nombre, setNombre] = useState('');
   const [correo, setCorreo] = useState('');
   const [filtro, setFiltro] = useState('');
-  const [errors, setErrors] = useState<{ nombre?: string; correo?: string }>({});
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const validate = () => {
-    const e: { nombre?: string; correo?: string } = {};
-    if (!nombre.trim()) e.nombre = 'El nombre es requerido';
-    if (!correo.trim()) e.correo = 'El correo es requerido';
-    else if (!/\S+@\S+\.\S+/.test(correo)) e.correo = 'Correo inválido';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const agregar = () => {
-    if (!validate()) return;
-    setPersonas(prev => [...prev, { id: Date.now().toString(), nombre, correo }]);
-    setNombre('');
-    setCorreo('');
-    setErrors({});
+  const buscarYAgregar = async () => {
+    if (!correo.trim()) { setError('Ingresa un correo'); return; }
+    if (!/\S+@\S+\.\S+/.test(correo)) { setError('Correo inválido'); return; }
+    if (personas.find(p => p.correo === correo)) { setError('Ya está en tu lista'); return; }
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/usuario/${correo}`);
+      const data = await res.json();
+      if (!res.ok) { setError(data.detail || 'Usuario no encontrado'); return; }
+      setPersonas(prev => [...prev, { id: data.id.toString(), nombre: data.nombre, correo: data.correo }]);
+      setCorreo('');
+    } catch {
+      setError('No se pudo conectar al servidor');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const eliminar = (id: string) => {
@@ -47,43 +50,34 @@ export default function PersonasScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Personas vinculadas</Text>
 
-      {/* Formulario */}
       <View style={styles.form}>
+        <Text style={styles.formTitle}>Agregar persona</Text>
         <TextInput
-          style={[styles.input, errors.nombre && styles.inputError]}
-          placeholder="Nombre"
-          placeholderTextColor="#9CA3AF"
-          value={nombre}
-          onChangeText={setNombre}
-        />
-        {errors.nombre && <Text style={styles.errorText}>{errors.nombre}</Text>}
-
-        <TextInput
-          style={[styles.input, errors.correo && styles.inputError]}
+          style={[styles.input, error && styles.inputError]}
           placeholder="Correo electrónico"
           placeholderTextColor="#9CA3AF"
           keyboardType="email-address"
           autoCapitalize="none"
           value={correo}
-          onChangeText={setCorreo}
+          onChangeText={v => { setCorreo(v); setError(null); }}
         />
-        {errors.correo && <Text style={styles.errorText}>{errors.correo}</Text>}
-
-        <TouchableOpacity style={styles.button} onPress={agregar}>
-          <Text style={styles.buttonText}>Agregar persona</Text>
+        {error && <Text style={styles.errorText}>{error}</Text>}
+        <TouchableOpacity style={styles.button} onPress={buscarYAgregar} disabled={loading}>
+          {loading
+            ? <ActivityIndicator color="white" />
+            : <Text style={styles.buttonText}>Buscar y agregar</Text>
+          }
         </TouchableOpacity>
       </View>
 
-      {/* Filtro */}
       <TextInput
         style={styles.filtro}
-        placeholder="Buscar por nombre o correo..."
+        placeholder="Buscar en mi lista..."
         placeholderTextColor="#9CA3AF"
         value={filtro}
         onChangeText={setFiltro}
       />
 
-      {/* Lista */}
       <FlatList
         data={personasFiltradas}
         keyExtractor={item => item.id}
@@ -108,6 +102,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB', paddingHorizontal: 20, paddingTop: 60 },
   title: { fontSize: 24, fontWeight: '800', color: '#111827', marginBottom: 20 },
   form: { backgroundColor: 'white', borderRadius: 16, padding: 16, marginBottom: 16, elevation: 2 },
+  formTitle: { fontSize: 15, fontWeight: '700', color: '#111827', marginBottom: 12 },
   input: {
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -117,10 +112,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#111827',
     marginBottom: 4,
-    marginTop: 8,
   },
   inputError: { borderColor: '#EF4444' },
-  errorText: { fontSize: 12, color: '#EF4444', marginBottom: 4 },
+  errorText: { fontSize: 12, color: '#EF4444', marginBottom: 8 },
   button: {
     backgroundColor: '#3B82F6',
     paddingVertical: 12,
