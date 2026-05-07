@@ -146,4 +146,8 @@ async def websocket_endpoint(websocket: WebSocket, correo: str):
                             pass
 
     except WebSocketDisconnect:
+        print(f"WebSocket desconectado: {correo}")
+        conexiones.pop(correo, None)
+    except Exception as e:
+        print(f"Error general en WebSocket {correo}: {e}")
         conexiones.pop(correo, None)
