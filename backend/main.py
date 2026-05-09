@@ -76,9 +76,10 @@ async def websocket_endpoint(websocket: WebSocket, correo: str):
     try:
         while True:
             data = await websocket.receive_json()
+            tipo = data.get("tipo")
 
             # --- Mensaje privado ---
-            if data.get("tipo") == "mensaje":
+            if tipo == "mensaje":
                 destinatario = data.get("para")
                 texto = data.get("mensaje", "")
                 if destinatario and destinatario in conexiones:
@@ -90,7 +91,6 @@ async def websocket_endpoint(websocket: WebSocket, correo: str):
                         })
                     except Exception:
                         pass
-                # Confirmar al remitente que fue enviado
                 try:
                     await websocket.send_json({
                         "tipo": "mensaje_enviado",
@@ -99,6 +99,36 @@ async def websocket_endpoint(websocket: WebSocket, correo: str):
                     })
                 except Exception:
                     pass
+
+            # --- Vibración (broma) ---
+            elif tipo == "vibracion":
+                destinatario = data.get("para")
+                if destinatario and destinatario in conexiones:
+                    try:
+                        await conexiones[destinatario].send_json({
+                            "tipo": "vibracion",
+                            "de": correo,
+                        })
+                    except Exception:
+                        pass
+
+            # --- Emergencia: broadcast a todos ---
+            elif tipo == "emergencia":
+                lat = data.get("lat")
+                lng = data.get("lng")
+                nombre = correo.split("@")[0]
+                for other_correo, ws in conexiones.items():
+                    if other_correo != correo:
+                        try:
+                            await ws.send_json({
+                                "tipo": "emergencia",
+                                "de": correo,
+                                "mensaje": f"🚨 {nombre} se encuentra en peligro, por favor consigue ayuda.",
+                                "lat": lat,
+                                "lng": lng,
+                            })
+                        except Exception:
+                            pass
 
             # --- Coordenadas ---
             else:
